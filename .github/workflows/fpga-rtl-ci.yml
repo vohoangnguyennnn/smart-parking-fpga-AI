@@ -1,0 +1,72 @@
+name: FPGA RTL CI
+
+on:
+  push:
+    paths: ['FPGA/**']
+  pull_request:
+    paths: ['FPGA/**']
+
+jobs:
+  # ── Job 1: Kiểm tra syntax toàn bộ RTL ─────────────────────────────────────
+  rtl-syntax:
+    name: RTL Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install iverilog
+        run: sudo apt-get install -y --no-install-recommends iverilog
+
+      - name: Compile all RTL modules together
+        run: |
+          iverilog -g2012 -tnull FPGA/rtl/*.v
+          echo "All RTL files compiled successfully"
+
+  # ── Job 2: Chạy từng testbench ──────────────────────────────────────────────
+  simulation:
+    name: Run Testbenches (iverilog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install iverilog
+        run: sudo apt-get install -y --no-install-recommends iverilog
+
+      - name: Run all testbenches
+        working-directory: FPGA
+        run: |
+          FAILED=0
+          RTL_FILES=$(ls rtl/*.v)
+          mkdir -p sim_out
+
+          for tb in tb/tb_*.sv; do
+            TB_NAME=$(basename "$tb" .sv)
+            printf '\n══ %s ══\n' "$TB_NAME"
+
+            # ── Compile ──────────────────────────────────────────────────────
+            if ! iverilog -g2012 -s "$TB_NAME" \
+                          -o "sim_out/$TB_NAME" \
+                          "$tb" $RTL_FILES 2>&1; then
+              echo "✗ COMPILE FAILED: $TB_NAME"
+              FAILED=1
+              continue
+            fi
+
+            # ── Simulate (timeout 90s per testbench) ─────────────────────────
+            OUTPUT=$(timeout 90 vvp "sim_out/$TB_NAME" 2>&1 || true)
+            echo "$OUTPUT"
+
+            if echo "$OUTPUT" | grep -q "SOME TESTS FAILED"; then
+              echo "✗ SIM FAILED: $TB_NAME"
+              FAILED=1
+            elif echo "$OUTPUT" | grep -q "ALL TESTS PASSED"; then
+              echo "✓ PASSED: $TB_NAME"
+            else
+              echo "⚠ UNKNOWN RESULT: $TB_NAME (no summary line found)"
+              FAILED=1
+            fi
+          done
+
+          exit $FAILED

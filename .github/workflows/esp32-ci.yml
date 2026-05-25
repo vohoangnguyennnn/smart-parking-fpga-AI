@@ -1,0 +1,56 @@
+name: ESP32 Firmware CI
+
+on:
+  push:
+    paths: ['ESP32/**']
+  pull_request:
+    paths: ['ESP32/**']
+
+jobs:
+  # ── Job 1: Build ESP32 firmware ─────────────────────────────────────────────
+  build-esp32:
+    name: Build ESP32 Firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-pio-esp32-${{ hashFiles('ESP32/ESP32_firmware/platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-esp32-
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build
+        run: pio run --project-dir ESP32/ESP32_firmware
+
+  # ── Job 2: Build ESP-CAM firmware ───────────────────────────────────────────
+  build-espcam:
+    name: Build ESP-CAM Firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-pio-espcam-${{ hashFiles('ESP32/ESP_CAM_firmware/platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-espcam-
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build
+        run: pio run --project-dir ESP32/ESP_CAM_firmware
