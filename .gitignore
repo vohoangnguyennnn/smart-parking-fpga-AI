@@ -1,0 +1,86 @@
+# ─── IDE / Editor ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+
+# ─── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.env
+.venv/
+venv/
+env/
+
+# ─── AI Model weights (large binaries – store separately, e.g. Git LFS / DVC) ──
+SERVER_AI/models/**/*.pt
+SERVER_AI/models/**/*.pth
+SERVER_AI/models/**/*.onnx
+SERVER_AI/models/**/*.weights
+# Keep directory skeletons
+!SERVER_AI/models/**/.gitkeep
+
+# ─── Datasets (never commit raw data) ───────────────────────────────────────────
+SERVER_AI/dataset/*
+!SERVER_AI/dataset/.gitkeep
+!SERVER_AI/dataset/data.yaml.example
+
+# ─── Secrets / credentials ───────────────────────────────────────────────────────
+*.env
+!*.env.example
+SERVER_AI/config/firebase_key.json
+
+# ─── Sample images (runtime artefacts) ──────────────────────────────────────────
+SERVER_AI/sample_images/*
+!SERVER_AI/sample_images/.gitkeep
+
+# ─── ModelSim / QuestaSim simulation artefacts ───────────────────────────────────
+FPGA/scripts/work/
+FPGA/scripts/transcript
+FPGA/scripts/vsim.wlf
+
+# ─── Vivado / Quartus build artefacts ────────────────────────────────────────────
+*.jou
+*.log
+*.str
+*.dmp
+*.rpx
+*.xpr.bak
+vivado_pid*.str
+.Xil/
+impl_1/
+synth_1/
+sim_1/
+*.runs/
+*.ip_user_files/
+*.cache/
+*.hw/
+*.sim/
+*.gen/
+
+# ─── PlatformIO build artefacts ──────────────────────────────────────────────────
+ESP32/**/.pio/
+ESP32/**/build/
+ESP32/**/.pioenvs/
+
+# ─── Waveform / simulation dumps ────────────────────────────────────────────────
+*.vcd
+*.fst
+*.lxt
+*.wlf
+
+# ─── OS artefacts ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Docs build output ──────────────────────────────────────────────────────────
+docs/waveform/*
+!docs/waveform/.gitkeep
+report/*
+!report/.gitkeep
