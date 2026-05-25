@@ -82,5 +82,7 @@ desktop.ini
 # ─── Docs build output ──────────────────────────────────────────────────────────
 docs/waveform/*
 !docs/waveform/.gitkeep
+!docs/waveform/*.png
+!docs/waveform/README.md
 report/*
 !report/.gitkeep
