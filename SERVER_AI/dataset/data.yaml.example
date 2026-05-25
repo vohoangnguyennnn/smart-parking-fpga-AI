@@ -1,0 +1,16 @@
+# YOLOv8 dataset config — Vietnamese License Plate Detection
+# Copy to data.yaml and edit paths to match your local dataset
+
+# Root directory containing images/ and labels/
+path: /absolute/path/to/your/dataset
+
+# Train / Val / Test image directories (relative to `path`)
+train: images/train
+val:   images/val
+test:  images/test   # optional
+
+# Class names
+names:
+  0: license_plate
+
+nc: 1

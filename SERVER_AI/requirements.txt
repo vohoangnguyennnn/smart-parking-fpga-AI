@@ -1,0 +1,17 @@
+# Web server
+flask>=3.0
+requests>=2.31
+
+# Firebase
+firebase-admin>=6.5
+
+# Deep learning
+torch>=2.1
+torchvision>=0.16
+ultralytics>=8.2
+
+# Image & data
+opencv-python>=4.9
+Pillow>=10.2
+numpy>=1.26
+pandas>=2.2
