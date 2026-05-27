@@ -374,10 +374,10 @@ cd ../../SERVER_AI && pip install -r requirements.txt && python server/server.py
 GitHub Actions runs automatically on changes to each subsystem:
 
 - 🧹 **RTL syntax check** — Icarus Verilog compiles all RTL modules together
-- 🌊 **RTL simulation** — Icarus Verilog (`iverilog` + `vvp`) runs every self-checking testbench and asserts `ALL TESTS PASSED`
+- 🌊 **RTL simulation (smoke tests)** — Icarus Verilog (`iverilog` + `vvp`) runs the portable subset of self-checking testbenches and asserts `ALL TESTS PASSED`
 - 🔨 **ESP32 build** — PlatformIO compiles both the gateway and ESP-CAM firmwares
 
-> Questa/ModelSim is used locally to capture the waveform gallery; CI uses the open-source Icarus Verilog so it runs without licensed tools.
+> **Full functional sign-off is done in Questa/ModelSim** (the waveform gallery is the record of that). CI uses the open-source Icarus Verilog as a smoke test so it runs without licensed tools; a few testbenches rely on SystemVerilog features Icarus doesn't support and are therefore verified only in Questa.
 
 ---
 

@@ -51,7 +51,7 @@ make sim  TOP=tb_parking_uart_top   # batch run a testbench
 make wave TOP=tb_parking_uart_top   # open the Questa waveform viewer
 ```
 
-Every module has a dedicated self-checking testbench in `tb/`; CI runs them all with Icarus Verilog and asserts `ALL TESTS PASSED`. Annotated waveform screenshots for all 12 modules are in [`docs/waveform/README.md`](../docs/waveform/README.md).
+Every module has a dedicated self-checking testbench in `tb/`. **Full functional sign-off is done in Questa/ModelSim** — the [waveform gallery](../docs/waveform/README.md) is the record of that. CI additionally smoke-tests the subset of testbenches that are portable to the open-source Icarus Verilog (a few use SystemVerilog features Icarus doesn't support).
 
 ---
 

@@ -22,9 +22,12 @@ jobs:
           iverilog -g2012 -tnull FPGA/rtl/*.v
           echo "All RTL files compiled successfully"
 
-  # ── Job 2: Chạy từng testbench ──────────────────────────────────────────────
+  # ── Job 2: Smoke-test the iverilog-portable testbenches ─────────────────────
+  # Full functional sign-off is done in Questa (see docs/waveform/). CI runs the
+  # subset of testbenches that are portable to the open-source Icarus Verilog;
+  # the remaining ones use SystemVerilog features Icarus does not support.
   simulation:
-    name: Run Testbenches (iverilog)
+    name: Run Testbenches (iverilog smoke tests)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -34,21 +37,28 @@ jobs:
       - name: Install iverilog
         run: sudo apt-get install -y --no-install-recommends iverilog
 
-      - name: Run all testbenches
+      - name: Run iverilog-compatible testbenches
         working-directory: FPGA
         run: |
+          TESTBENCHES="
+            tb_uart_rx
+            tb_uart_tx
+            tb_uart_frame_parser
+            tb_ir_sensor_debounce
+            tb_seven_seg_decoder
+            tb_parking_uart_top
+          "
           FAILED=0
           RTL_FILES=$(ls rtl/*.v)
           mkdir -p sim_out
 
-          for tb in tb/tb_*.sv; do
-            TB_NAME=$(basename "$tb" .sv)
+          for TB_NAME in $TESTBENCHES; do
             printf '\n══ %s ══\n' "$TB_NAME"
 
             # ── Compile ──────────────────────────────────────────────────────
             if ! iverilog -g2012 -s "$TB_NAME" \
                           -o "sim_out/$TB_NAME" \
-                          "$tb" $RTL_FILES 2>&1; then
+                          "tb/$TB_NAME.sv" $RTL_FILES 2>&1; then
               echo "✗ COMPILE FAILED: $TB_NAME"
               FAILED=1
               continue
