@@ -38,6 +38,7 @@ SERVER_AI/config/firebase_key.json
 # ─── Sample images (runtime artefacts) ──────────────────────────────────────────
 SERVER_AI/sample_images/*
 !SERVER_AI/sample_images/.gitkeep
+SERVER_AI/server_ai_fix/
 
 # ─── ModelSim / QuestaSim simulation artefacts ───────────────────────────────────
 FPGA/scripts/work/
