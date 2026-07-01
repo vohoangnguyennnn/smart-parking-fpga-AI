@@ -286,11 +286,11 @@ cd ESP32/ESP_CAM_firmware && pio run --target upload
 
 ## 🧠 AI Server
 
-**Pipeline:** ESP32-CAM JPEG → **YOLOv8** plate detection → crop + preprocess → **CRNN** (CNN + BiLSTM, CTC decode) OCR → plate normalization → entry/exit rule check → Firebase log.
+**Pipeline:** ESP32-CAM JPEG → **YOLOv8** plate detection → crop + preprocess → **CRNN** (CNN + BiLSTM, CTC decode) OCR → cleanup + validation → entry/exit rule check → Firebase log.
 
 - **Detection:** Ultralytics YOLOv8 fine-tuned for license plates.
-- **OCR:** Custom CRNN trained with a CTC loss over a Vietnamese-plate charset (digits + plate letters) with domain post-processing (letter/digit disambiguation, plate formatting `XXX-NNN.NN`).
-- **Server:** Flask with `/trigger` (gate decision) and `/update_slots` (occupancy sync), thread-safe in-memory plate registry, OCR timeout guard, atomic capture writes.
+- **OCR:** Custom CRNN trained with a CTC loss over a Vietnamese-plate charset (digits + plate letters), with two-line plate preprocessing and raw `A-Z0-9` cleanup.
+- **Server:** Flask with `/trigger` (gate decision) and `/update_slots` (occupancy sync), thread-safe plate registry, Firebase state restore, OCR timeout guard, atomic capture writes.
 - **Realtime:** pushes `/logs`, `/vehicles/{plate}`, `/realtime`, `/slot_detail` to Firebase RTDB.
 
 ### Setup
@@ -328,6 +328,10 @@ python -m ai.plate_recognition           # debug: run detection on sample_images
 **YOLO + CRNN plate recognition demo:**
 
 ![YOLO and OCR plate demo](docs/images/plate_demo.jpg)
+
+**CRNN validation snapshot:** 624 real validation samples, 61.06% full-plate exact match, 85.91% character accuracy, 0.8758 weighted F1. Detailed curves and reports are in [`docs/AI/results/`](docs/AI/results/).
+
+![CRNN training curves](docs/AI/results/train_curves.png)
 
 ---
 
