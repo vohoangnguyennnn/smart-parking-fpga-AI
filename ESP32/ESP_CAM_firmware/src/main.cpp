@@ -3,7 +3,8 @@
  * GET /capture -> JPEG image.
  */
 
-#include "config.h"
+static const char *WIFI_SSID = "YOUR_SSID_WIFI";
+static const char *WIFI_PASSWORD = "YOUR_PASSWORD_WIFI";
 
 #define PWDN_GPIO_NUM 32
 #define RESET_GPIO_NUM -1
@@ -37,13 +38,16 @@ static volatile bool captureBusy = false;
 static bool cameraReady = false;
 
 static unsigned long lastCaptureMs = 0;
-static const unsigned long minCaptureIntervalMs = MIN_CAPTURE_INTERVAL_MS;
+static const unsigned long minCaptureIntervalMs = 200;
+
+// Chờ cho đối tượng (xe) ổn định trước khi chụp, sau khi nhận trigger.
+static const unsigned long triggerStabilizeMs = 3000;
 
 static unsigned long lastWifiReconnectAttempt = 0;
-static const unsigned long delayReconnect = WIFI_RECONNECT_DELAY_MS;
+static const unsigned long delayReconnect = 5000;
 
 static unsigned long lastCameraReinitAttempt = 0;
-static const unsigned long delayCameraReinit = CAMERA_REINIT_DELAY_MS;
+static const unsigned long delayCameraReinit = 30000;
 
 bool initCamera()
 {
@@ -92,12 +96,13 @@ bool connectWiFi()
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
-#if USE_STATIC_IP
-  WiFi.config(STATIC_IP, GATEWAY_IP, SUBNET_MASK);
-#endif
+  WiFi.config(
+      IPAddress(172, 20, 10, 4),
+      IPAddress(172, 20, 10, 1),
+      IPAddress(255, 255, 255, 0));
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  const unsigned long TIMEOUT_MS = WIFI_CONNECT_TIMEOUT_MS;
+  const unsigned long TIMEOUT_MS = 30000;
   const unsigned long POLL_INTERVAL = 500;
   unsigned long start = millis();
 
@@ -161,6 +166,21 @@ static void handleCapture()
     return;
   }
 
+  // Trigger nhận được — chờ xe ổn định. Chỉ request "thắng" (không busy)
+  // mới tới được đây nên đúng một lần chờ tại một thời điểm.
+  Serial.printf("[CAM] Trigger — chờ %lu ms cho ổn định rồi chụp\n",
+                triggerStabilizeMs);
+  delay(triggerStabilizeMs);
+
+  // Xả các frame cũ đã nằm sẵn trong buffer (fb_count=2) để frame lấy ra
+  // là cảnh *hiện tại*, không phải frame chụp trước lúc chờ.
+  for (int i = 0; i < 2; i++)
+  {
+    camera_fb_t *stale = esp_camera_fb_get();
+    if (stale)
+      esp_camera_fb_return(stale);
+  }
+
   camera_fb_t *fb = esp_camera_fb_get();
 
   if (!fb)
@@ -185,6 +205,9 @@ static void handleCapture()
     server.send(500, "text/plain", "Frame error");
     return;
   }
+
+  Serial.printf("[CAM] Capture OK — %u bytes %ux%u\n",
+                fb->len, fb->width, fb->height);
 
   Serial.printf("[CAM] Capture OK — %u bytes %ux%u\n",
                 fb->len, fb->width, fb->height);
