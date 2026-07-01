@@ -20,18 +20,37 @@ INPUT_IMAGE = SERVER_AI_ROOT / "sample_images"
 OUTPUT_DIR  = SERVER_AI_ROOT / "outputs"
 CONFIDENCE  = 0.25
 TARGET_H    = 32
-MAX_W       = 160
+MAX_W       = 256
 DEVICE      = 'cuda' if torch.cuda.is_available() else 'cpu'
+if DEVICE == 'cuda':
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
 # ────────────────────────────────────────────────────────────────────────────────
 
 # ── CTC charset (must match training) ─────────────────────────────────────────
-CHARS       = '-0123456789ABCDEFGHKLMNPSTUVXYZ'
+CHARS       = '0123456789ABCDEFGHKLMNPSTUVXYZ'
 idx2char    = {i + 1: c for i, c in enumerate(CHARS)}
 NUM_CLASSES = len(CHARS) + 1
 
 # ── Preprocess ─────────────────────────────────────────────────────────────────
+def maybe_split_two_line(img: Image.Image, ratio_thresh: float = 2.0) -> Image.Image:
+    """Split a near-square two-line plate into one horizontal OCR line."""
+    w, h = img.size
+    if w / h >= ratio_thresh:
+        return img
+    half = h // 2
+    top  = img.crop((0, 0, w, half))
+    bot  = img.crop((0, half, w, h))
+    fill = 255 if img.mode == 'L' else (255, 255, 255)
+    out  = Image.new(img.mode, (w * 2, half), fill)
+    out.paste(top, (0, 0))
+    out.paste(bot, (w, 0))
+    return out
+
+
 def preprocess_plate(img_pil: Image.Image) -> torch.Tensor:
     img = img_pil.convert('L')
+    img = maybe_split_two_line(img)
     w, h = img.size
     ratio = TARGET_H / h
     new_w = min(int(w * ratio), MAX_W)
@@ -44,35 +63,6 @@ def preprocess_plate(img_pil: Image.Image) -> torch.Tensor:
     arr    = (arr - 0.5) / 0.5
     tensor = torch.from_numpy(arr).unsqueeze(0)
     return tensor
-
-# ── Post-processing ────────────────────────────────────────────────────────────
-def normalize_plate(text: str) -> str:
-    if not text:
-        return ""
-    cleaned = re.sub(r'[^A-Za-z0-9]', '', text).upper()
-    chars = list(cleaned)
-    map_ld = {'O':'0','Q':'0','I':'1','L':'4','Z':'2','S':'5','B':'8','G':'6'}
-    for i in [0, 1]:
-        if i < len(chars) and not chars[i].isdigit():
-            chars[i] = map_ld.get(chars[i], chars[i])
-    if len(chars) >= 3 and not chars[2].isalpha():
-        map_dl = {'0':'O','1':'I','4':'A','5':'S','6':'G','8':'B','2':'Z'}
-        chars[2] = map_dl.get(chars[2], chars[2])
-    for i in range(3, len(chars)):
-        if not chars[i].isdigit():
-            chars[i] = map_ld.get(chars[i], chars[i])
-    return "".join(chars)
-
-def fix_plate_length(text: str) -> str:
-    if not text:
-        return ""
-    cleaned = re.sub(r'[^A-Z0-9]', '', text)
-    prefix  = cleaned[:3]
-    digits  = cleaned[3:8]
-    if len(digits) == 5:
-        return f"{prefix}-{digits[:3]}.{digits[3:]}"
-    else:
-        return f"{prefix}-{digits}"
 
 # ── CRNN model (matches train_crnn.py) ────────────────────────────────────────
 class CRNN(nn.Module):
@@ -122,7 +112,7 @@ def decode(indices: list) -> str:
     return ''.join(result)
 
 def read_plate(tensor: torch.Tensor, model: CRNN) -> str:
-    with torch.no_grad():
+    with torch.no_grad(), torch.autocast(device_type='cuda', enabled=DEVICE == 'cuda', dtype=torch.bfloat16):
         out   = model(tensor.unsqueeze(0).to(DEVICE))
         preds = out.argmax(2).squeeze(1).cpu().tolist()
         return decode(preds)
@@ -166,8 +156,7 @@ def detect_plate(image_path: str) -> str:
     tensor   = preprocess_plate(crop_pil)
     raw_text = read_plate(tensor, crnn)
 
-    plate = normalize_plate(raw_text)
-    plate = fix_plate_length(plate)
+    plate = re.sub(r'[^A-Z0-9]', '', raw_text.upper())
     return plate if plate else "UNKNOWN"
 
 # ── Main (debug only) ──────────────────────────────────────────────────────────
@@ -221,8 +210,7 @@ def main():
             tensor   = preprocess_plate(crop_pil)
             raw_text = read_plate(tensor, crnn)
 
-            plate_text = normalize_plate(raw_text)
-            plate_text = fix_plate_length(plate_text)
+            plate_text = re.sub(r'[^A-Z0-9]', '', raw_text.upper())
 
             print(f"  [{i+1}] {img_path.name} | conf={conf:.2f} | plate='{plate_text}'")
 
