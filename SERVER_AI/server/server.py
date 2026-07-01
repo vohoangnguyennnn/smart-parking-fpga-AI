@@ -5,6 +5,7 @@ Firebase Realtime Database integration.
 """
 
 import os
+import re
 import sys
 import time
 import threading
@@ -74,6 +75,23 @@ class PlateDB:
     def mark_out(self, plate: str) -> None:
         with self._lock:
             self._plates[plate] = "OUT"
+
+    def find_in_match(self, plate: str) -> str | None:
+        """Find the IN plate matching `plate`, tolerating one OCR error.
+
+        Exact match wins. Otherwise return the unique IN plate within edit
+        distance 1. Returns None if nothing matches or the match is ambiguous
+        (>=2 candidates within distance 1), so the gate never opens for the
+        wrong car.
+        """
+        with self._lock:
+            in_plates = [p for p, s in self._plates.items() if s == "IN"]
+
+        if plate in in_plates:
+            return plate
+
+        candidates = [p for p in in_plates if _edit_distance_le1(p, plate)]
+        return candidates[0] if len(candidates) == 1 else None
 
 
 # ── Firebase Helpers ─────────────────────────────────────────────────────────────
@@ -162,6 +180,25 @@ def push_slot_detail(slot_mask: int) -> None:
         print(f"[FIREBASE] push_slot_detail failed — {e}")
 
 
+def restore_db_from_firebase() -> None:
+    """Reload IN vehicles from /vehicles so a restart keeps gate state."""
+    if not _fb_initialized:
+        return
+
+    try:
+        vehicles = firebase_db.reference("/vehicles").get() or {}
+    except Exception as e:
+        print(f"[FIREBASE] restore failed — {e}")
+        return
+
+    count = 0
+    for plate, info in vehicles.items():
+        if isinstance(info, dict) and info.get("status") == "IN":
+            db.save(plate)
+            count += 1
+    print(f"[FIREBASE] Restored {count} IN vehicle(s)")
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────────
 
 def _capture_image(cam_url: str) -> bytes:
@@ -169,7 +206,8 @@ def _capture_image(cam_url: str) -> bytes:
     res = requests.get(cam_url, timeout=CAM_TIMEOUT)
 
     if res.status_code != 200:
-        raise RuntimeError(f"camera_http_{res.status_code}")
+        print(f"[CAM] HTTP {res.status_code} from {cam_url}")
+        raise RuntimeError("camera_http_error")
 
     content_type = res.headers.get("Content-Type", "")
     if "image" not in content_type.lower():
@@ -214,6 +252,39 @@ def _count_occupied(slot_mask: int) -> int:
     return bin(slot_mask).count("1")
 
 
+_PLATE_RE = re.compile(r'^\d{2}[A-Z]{1,2}\d{4,6}$')
+
+
+def _is_plausible_plate(plate: str) -> bool:
+    """True if `plate` looks like a Vietnamese plate."""
+    return bool(_PLATE_RE.match(plate))
+
+
+def _edit_distance_le1(a: str, b: str) -> bool:
+    """True if Levenshtein(a, b) <= 1."""
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+
+    if la == lb:
+        return sum(1 for x, y in zip(a, b) if x != y) <= 1
+
+    if la > lb:
+        a, b = b, a
+    i = j = 0
+    skipped = False
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+        elif skipped:
+            return False
+        else:
+            skipped = True
+            j += 1
+    return True
+
+
 def _log_slot_state(slot_mask: int) -> None:
     occupied = _count_occupied(slot_mask)
     free     = TOTAL_SLOTS - occupied
@@ -225,6 +296,7 @@ def _log_slot_state(slot_mask: int) -> None:
 
 app = Flask(__name__)
 db  = PlateDB()
+restore_db_from_firebase()
 _locks: dict[str, threading.Lock] = {
     "entry": threading.Lock(),
     "exit":  threading.Lock(),
@@ -257,7 +329,8 @@ def trigger():
     gate = body.get("gate")
 
     if gate not in _locks:
-        return _respond_err(f"unknown_gate_{gate}", t0)
+        print(f"[TRIGGER] unknown gate value: {gate!r}")
+        return _respond_err("unknown_gate", t0)
 
     slot_mask = body.get("slot_mask")
     if not isinstance(slot_mask, int) or slot_mask < 0 or slot_mask > (1 << TOTAL_SLOTS) - 1:
@@ -301,6 +374,11 @@ def trigger():
                           f"action=reject  [{elapsed()}]")
                     return _respond_ok("reject", plate, t0)
 
+                if not _is_plausible_plate(plate):
+                    print(f"[{gate.upper()}] ← REJECT  plate={plate!r}  "
+                          f"reason=invalid_format  action=reject  [{elapsed()}]")
+                    return _respond_ok("reject", plate, t0)
+
                 if db.is_in(plate):
                     print(f"[{gate.upper()}] ← REJECT duplicate plate={plate} "
                         f"action=reject [{elapsed()}]")
@@ -326,17 +404,25 @@ def trigger():
                 _atomic_write(CAPTURE_PATH, raw)
                 plate = _run_ocr(CAPTURE_PATH)
 
-                if plate in ("UNKNOWN", "") or not db.is_in(plate):
-                    reason = "unknown_plate" if plate not in ("UNKNOWN", "") else "ocr_failed"
+                if plate in ("UNKNOWN", ""):
                     print(f"[{gate.upper()}] ← REJECT  plate={plate!r}  "
-                          f"reason={reason}  action=reject  [{elapsed()}]")
+                          f"reason=ocr_failed  action=reject  [{elapsed()}]")
                     return _respond_ok("reject", plate, t0)
 
-                db.mark_out(plate)
-                push_firebase_event("open_exit", plate, "exit", slot_mask)
-                print(f"[{gate.upper()}] ← OPEN  plate={plate}  "
+                matched = db.find_in_match(plate)
+                if matched is None:
+                    print(f"[{gate.upper()}] ← REJECT  plate={plate!r}  "
+                          f"reason=unknown_plate  action=reject  [{elapsed()}]")
+                    return _respond_ok("reject", plate, t0)
+
+                if matched != plate:
+                    print(f"[{gate.upper()}] fuzzy match  read={plate}  → matched={matched}")
+
+                db.mark_out(matched)
+                push_firebase_event("open_exit", matched, "exit", slot_mask)
+                print(f"[{gate.upper()}] ← OPEN  plate={matched}  "
                       f"action=open_exit  [{elapsed()}]")
-                return _respond_ok("open_exit", plate, t0)
+                return _respond_ok("open_exit", matched, t0)
 
         except Exception as e:
             print(f"[{gate.upper()}] ← ERROR  {e}  [{elapsed()}]")
@@ -368,6 +454,20 @@ def update_slots():
 
 # ── Response helpers ─────────────────────────────────────────────────────────────
 
+_ERR_STATUS = {
+    "invalid_json": 400,
+    "invalid_slot_mask": 400,
+    "unknown_gate": 400,
+    "camera_timeout": 504,
+    "camera_connection_error": 502,
+    "camera_http_error": 502,
+    "invalid_content_type": 502,
+    "empty_response": 502,
+    "image_too_large": 502,
+    "internal_error": 500,
+}
+
+
 def _respond_ok(action: str, plate: str = "", t0: float = 0) -> tuple:
     elapsed = f"{(time.time()-t0)*1000:.0f}ms" if t0 else ""
     return jsonify({
@@ -386,7 +486,7 @@ def _respond_err(reason: str, t0: float = 0) -> tuple:
         "action": "reject",
         "reason": reason,
         "elapsed": elapsed,
-    }), 200
+    }), _ERR_STATUS.get(reason, 400)
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────────
