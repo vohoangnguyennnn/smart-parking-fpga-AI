@@ -49,7 +49,7 @@ This project implements a complete, hardware-in-the-loop **automated parking bar
 
 The headline of the project is the **FPGA RTL design**: a 12-module datapath with a framed UART protocol, a command-dispatch FSM, and **12 self-checking testbenches**, every one captured as a Questa waveform.
 
-> 📸 **Suggested hero image:** add a photo of your physical setup (FPGA board + servos + LCD + ESP32-CAM) at `docs/images/hardware_overview.jpg` and embed it here — a real hardware shot makes a strong first impression on a CV.
+![Hardware overview](docs/images/hardware_overview.png)
 
 ---
 
@@ -325,7 +325,9 @@ python -m ai.plate_recognition           # debug: run detection on sample_images
 
 ![Firebase dashboard](docs/images/firebase_dashboard.png)
 
-> 📸 To round out the AI section, add an annotated YOLO+OCR result (bounding box + read plate) at `docs/images/plate_demo.jpg`.
+**YOLO + CRNN plate recognition demo:**
+
+![YOLO and OCR plate demo](docs/images/plate_demo.jpg)
 
 ---
 
